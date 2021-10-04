@@ -1,6 +1,8 @@
 import { OperationObject, ParameterObject } from './openapitypes';
 import { promises as fs } from 'fs';
-import { OpenAPI, OpenAPIV3, OpenAPIV2 } from 'openapi-types';
+import { OpenAPIV3 } from 'openapi-types';
+
+const specPath = process.argv[2];
 
 const lowercaseFirstLetter = (string) =>
   string.charAt(0).toLowerCase() + string.slice(1);
@@ -15,8 +17,32 @@ const strip = (string: string) =>
 const getApiName = (operation: OperationObject) =>
   strip(operation.tags[0]) + 'Api';
 
-const getOperationName = (operation: OperationObject) =>
-  lowercaseFirstLetter(strip(operation.operationId));
+const getOperationName = (operationName: string) =>
+  lowercaseFirstLetter(strip(operationName));
+
+const getVariableName = (string) => lowercaseFirstLetter(strip(string));
+
+const reservedKeywords = ['Response'];
+const tokenMappings = {};
+const getTokenName = (token: string) => {
+  // Bla => Bla
+  // Response => Response1
+  token = strip(token);
+
+  if (tokenMappings[token]) {
+    return tokenMappings[token];
+  }
+
+  let value = token;
+  let i = 0;
+  while (reservedKeywords.includes(value)) {
+    i++;
+    value = token + '_' + String(i);
+  }
+  reservedKeywords.push(value);
+  tokenMappings[token] = value;
+  return value;
+};
 
 type Action = {
   path: string;
@@ -45,7 +71,11 @@ const parseSchemaObject = (schema: any) => {
   }
 
   if (schema.$ref) {
-    return strip(schema.$ref.split('/').slice(-1)[0]);
+    return getTokenName(schema.$ref.split('/').slice(-1)[0]);
+  }
+
+  if (schema.type === undefined && schema.properties !== undefined) {
+    schema.type = 'object';
   }
 
   switch (schema.type) {
@@ -54,7 +84,7 @@ const parseSchemaObject = (schema: any) => {
       for (const propName in schema.properties) {
         const property = schema.properties[propName];
         const required = schema.required && schema.required.includes(propName);
-        content += `  ${propName}${required ? '' : '?'}: ${parseSchemaObject(
+        content += `  '${propName}'${required ? '' : '?'}: ${parseSchemaObject(
           property,
         )};\n`;
       }
@@ -63,6 +93,9 @@ const parseSchemaObject = (schema: any) => {
     case 'string':
       if (schema.enum) {
         return schema.enum.map((e) => `'${e}'`).join(' | ');
+      }
+      if (schema.format === 'binary') {
+        return 'ReadableStream<Uint8Array>';
       }
       return 'string';
     case 'integer':
@@ -77,9 +110,9 @@ const parseSchemaObject = (schema: any) => {
 };
 
 (async () => {
-  const file = (
-    await fs.readFile('/local/sw6-openapi-objects.json')
-  ).toString();
+  const mainApiMediaType = 'application/json';
+  const additionalApiMediaTypes = ['application/octet-stream'];
+  const file = (await fs.readFile(specPath)).toString();
   const json = JSON.parse(file);
   const spec: OpenAPIV3.Document = json;
 
@@ -116,7 +149,7 @@ const parseSchemaObject = (schema: any) => {
 
     await schemasKeys.map(async (schemasKey) => {
       const schema: any = schemas[schemasKey];
-      content += `export type ${strip(schemasKey)} = ${parseSchemaObject(
+      content += `export type ${getTokenName(schemasKey)} = ${parseSchemaObject(
         schema,
       )}\n\n`;
     });
@@ -129,111 +162,188 @@ const parseSchemaObject = (schema: any) => {
     content += `constructor(private readonly client:Client) {}\n\n`;
 
     api.forEach((action: Action) => {
-      // function name
-      content += `  async ${getOperationName(action.operation)}(`;
+      const generateAction = (action, apiMediaType) => {
+        let actionHasMediaType = false;
 
-      let requestBodyData: any;
-      if (action.operation.requestBody) {
-        requestBodyData = action.operation.requestBody;
-
-        if (requestBodyData.content['application/json']) {
-          content += `requestBody: ${parseSchemaObject(
-            requestBodyData.content['application/json'].schema,
-          )},`;
-        }
-      }
-
-      // parameters
-      action.operation.parameters.forEach((parameter: ParameterObject) => {
-        content += `${parameter.name}${
-          parameter.required ? '' : '?'
-        }: ${parseSchemaObject(parameter.schema)},`;
-      });
-      content += `)`;
-
-      // return type
-      const returnTypes = [];
-      for (const statusCode in action.operation.responses) {
-        if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
-          const response = action.operation.responses[statusCode];
-          if (response.content && response.content['application/json']) {
-            returnTypes.push(
-              parseSchemaObject(response.content['application/json'].schema),
-            );
+        let requestBodyData: any;
+        if (action.operation.requestBody) {
+          requestBodyData = action.operation.requestBody;
+          if (requestBodyData.content[apiMediaType]) {
+            actionHasMediaType = true;
           }
         }
-      }
-      content +=
-        ':Promise<' +
-        (returnTypes.length > 0 ? returnTypes.join(' | ') : 'Blob') +
-        '>';
-      content += ` {`;
 
-      // parameters, method, path mapping
-      content += `const _apiRequest:ApiRequest = {
+        for (const statusCode in action.operation.responses) {
+          if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
+            const response = action.operation.responses[statusCode];
+            if (response.content && response.content[apiMediaType]) {
+              actionHasMediaType = true;
+            }
+          }
+        }
+        if (!actionHasMediaType) {
+          return;
+        }
+
+        // function name
+        content += `  async ${getOperationName(
+          action.operation.operationId +
+            '-' +
+            (apiMediaType === mainApiMediaType
+              ? ''
+              : apiMediaType.split('/')[1]),
+        )}(`;
+        const requestBodyContent = () => {
+          if (requestBodyData.content[apiMediaType]) {
+            content += `requestBody${
+              requestBodyData.required ? '' : '?'
+            }: ${parseSchemaObject(
+              requestBodyData.content[apiMediaType].schema,
+            )},`;
+          }
+        };
+
+        if (requestBodyData && requestBodyData.required) {
+          requestBodyContent();
+        }
+
+        // parameters
+        if (action.operation.parameters) {
+          action.operation.parameters
+            .sort(
+              (a: ParameterObject, b: ParameterObject) =>
+                +(b.required !== undefined && b.required) -
+                +(a.required !== undefined && a.required),
+            )
+            .forEach((parameter: ParameterObject) => {
+              content += `${getVariableName(parameter.name)}${
+                parameter.required ? '' : '?'
+              }: ${parseSchemaObject(parameter.schema)},`;
+            });
+        }
+
+        if (requestBodyData && !requestBodyData.required) {
+          requestBodyContent();
+        }
+
+        content += `)`;
+
+        // return type
+        const returnTypes = [];
+        for (const statusCode in action.operation.responses) {
+          if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
+            const response = action.operation.responses[statusCode];
+            if (response.content && response.content[apiMediaType]) {
+              returnTypes.push(
+                parseSchemaObject(response.content[apiMediaType].schema),
+              );
+            }
+          }
+        }
+        content +=
+          ':Promise<' +
+          (returnTypes.length > 0 ? returnTypes.join(' | ') : 'Blob') +
+          '>';
+        content += ` {`;
+
+        // parameters, method, path mapping
+        content += `const _apiRequest:ApiRequest = {
                 pathname: '${action.path}',
                 searchParams: new URLSearchParams(),
                 method: '${action.method}',
                 headers: {},
             };\n`;
 
-      action.operation.parameters.forEach((parameter: ParameterObject) => {
-        if (!parameter.required) {
-          content += `if (${parameter.name} !== undefined) {\n`;
+        if (action.operation.parameters) {
+          action.operation.parameters.forEach((parameter: ParameterObject) => {
+            if (!parameter.required) {
+              content += `if (${getVariableName(
+                parameter.name,
+              )} !== undefined) {\n`;
+            }
+            if (parameter.in === 'path') {
+              content += `_apiRequest.pathname = _apiRequest.pathname.replace('{${
+                parameter.name
+              }}', encodeURIComponent(String(${getVariableName(
+                parameter.name,
+              )})));\n`;
+            }
+            if (parameter.in === 'query') {
+              content += `_apiRequest.searchParams.append('${
+                parameter.name
+              }', String(${getVariableName(parameter.name)}));\n`;
+            }
+            if (parameter.in === 'header') {
+              content += `_apiRequest.headers['${
+                parameter.name
+              }'] = String(${getVariableName(parameter.name)});\n`;
+            }
+            if (!parameter.required) {
+              content += `}\n`;
+            }
+          });
         }
-        if (parameter.in === 'path') {
-          content += `_apiRequest.pathname = _apiRequest.pathname.replace('{${parameter.name}}', encodeURIComponent(${parameter.name}));\n`;
-        }
-        if (parameter.in === 'query') {
-          content += `_apiRequest.searchParams.append('${parameter.name}', ${parameter.name});\n`;
-        }
-        if (parameter.in === 'header') {
-          content += `_apiRequest.headers['${parameter.name}'] = ${parameter.name};\n`;
-        }
-        if (!parameter.required) {
-          content += `}\n`;
-        }
-      });
 
-      if (requestBodyData && requestBodyData.content['application/json']) {
-        content += `_apiRequest.headers['Content-type'] = 'application/json';\n`;
-        content += `_apiRequest.headers['Accept'] = 'application/json';\n`;
-        content += `_apiRequest.body = JSON.stringify(requestBody);\n`;
-      }
-      content += `const response = await this.client.fetch(_apiRequest);\n`;
-
-      // response mapping and handling
-
-      content += `switch (response.status) {`;
-      for (const statusCodeString in action.operation.responses) {
-        const statusCode = parseInt(statusCodeString);
-        const response = action.operation.responses[statusCodeString];
-        content += `case ${statusCode}:\n`;
-        if (statusCode < 300) {
-          content += `return`;
-        } else {
-          content += 'throw';
+        if (requestBodyData && requestBodyData.content[apiMediaType]) {
+          content += `_apiRequest.headers['Content-type'] = '${apiMediaType}';\n`;
+          if (requestBodyData.content[apiMediaType].schema.type !== 'string') {
+            content += `_apiRequest.body = JSON.stringify(requestBody);\n`;
+          } else {
+            content += `_apiRequest.body = requestBody;\n`;
+          }
         }
-        if (response.content && response.content['application/json']) {
-          content += ` await response.json();\n`;
-        } else {
-          content += ` await response.blob();\n`;
-        }
-      }
 
-      content += `default:\n`;
-      if (returnTypes.length === 0) {
-        content += `if (response.status < 300) {
+        if (returnTypes.length > 0) {
+          content += `_apiRequest.headers['Accept'] = '${apiMediaType}';\n`;
+        }
+        content += `const response = await this.client.fetch(_apiRequest);\n`;
+
+        // response mapping and handling
+
+        content += `switch (response.status) {`;
+        for (const statusCodeString in action.operation.responses) {
+          const statusCode = parseInt(statusCodeString);
+          if (statusCode > 0) {
+            const response = action.operation.responses[statusCodeString];
+            content += `case ${statusCode}:\n`;
+            if (statusCode < 300) {
+              content += `return`;
+            } else {
+              content += 'throw new ResponseError(response, ';
+            }
+            if (response.content && response.content[apiMediaType]) {
+              content += ` await this.client.successJsonResponseParser(await response.json())`;
+            } else {
+              content += ` await response.blob()`;
+            }
+            if (statusCode < 300) {
+              content += `;`;
+            } else {
+              content += ');';
+            }
+          }
+        }
+
+        content += `default:\n`;
+        if (returnTypes.length === 0) {
+          content += `if (response.status < 300) {
                         return await response.blob();
                     } else {
                     `;
-      }
-      content += `throw await response.blob();`;
-      if (returnTypes.length === 0) {
+        }
+        content += `throw new ResponseError(response, await response.blob());`;
+        if (returnTypes.length === 0) {
+          content += `}`;
+        }
         content += `}`;
-      }
-      content += `}`;
-      content += ` }\n\n`;
+        content += ` }\n\n`;
+      };
+
+      [mainApiMediaType]
+        .concat(additionalApiMediaTypes)
+        .forEach((apiMediaType) => {
+          generateAction(action, apiMediaType);
+        });
     });
 
     content += `}\n\n`;

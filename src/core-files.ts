@@ -7,11 +7,14 @@ export interface ClientMiddleware {
 
 export type requestHandler = (apiRequest: ApiRequest) => Promise<Response>;
 
+export type jsonParser = (json) => Promise<any>
+
 export class Client {
     constructor(
         private readonly basePath: string,
         private readonly fetchApi: any,
         private readonly middlewares: Array<ClientMiddleware> = [],
+        readonly successJsonResponseParser: jsonParser = async (r) => r,
     ) {}
 
     async fetch(apiRequest: ApiRequest): Promise<Response> {
@@ -39,7 +42,7 @@ export type ApiRequest = RequestInit & {
 };
 
 export class ResponseError extends Error {
-    constructor(readonly response: Response) {
+    constructor(readonly response: Response, readonly body: any) {
         super(`${response.status} ${response.statusText}`);
     }
 }
