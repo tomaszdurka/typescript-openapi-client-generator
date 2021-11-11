@@ -89,6 +89,11 @@ const parseSchemaObject = (schema: any) => {
         )};\n`;
       }
       content += '}';
+      if (schema.additionalProperties) {
+        content += '& Record<string, ';
+        content += parseSchemaObject(schema.additionalProperties);
+        content += '>';
+      }
       return content;
     case 'string':
       if (schema.enum) {
@@ -163,25 +168,28 @@ const parseSchemaObject = (schema: any) => {
 
     api.forEach((action: Action) => {
       const generateAction = (action, apiMediaType) => {
-        let actionHasMediaType = false;
-
+        let requestBodyContentMediaType;
         let requestBodyData: any;
         if (action.operation.requestBody) {
           requestBodyData = action.operation.requestBody;
-          if (requestBodyData.content[apiMediaType]) {
-            actionHasMediaType = true;
-          }
+          requestBodyContentMediaType =
+            requestBodyData.content[apiMediaType] ||
+            requestBodyData.content['*/*'];
         }
 
+        let responseMediaType = false;
         for (const statusCode in action.operation.responses) {
+          if (statusCode === 'default') {
+            responseMediaType = true;
+          }
           if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
             const response = action.operation.responses[statusCode];
             if (response.content && response.content[apiMediaType]) {
-              actionHasMediaType = true;
+              responseMediaType = response.content[apiMediaType];
             }
           }
         }
-        if (!actionHasMediaType) {
+        if (!responseMediaType && !requestBodyContentMediaType) {
           return;
         }
 
@@ -193,18 +201,17 @@ const parseSchemaObject = (schema: any) => {
               ? ''
               : apiMediaType.split('/')[1]),
         )}(`;
-        const requestBodyContent = () => {
-          if (requestBodyData.content[apiMediaType]) {
+
+        const generadeRequestBodyParam = () => {
+          if (requestBodyContentMediaType) {
             content += `requestBody${
               requestBodyData.required ? '' : '?'
-            }: ${parseSchemaObject(
-              requestBodyData.content[apiMediaType].schema,
-            )},`;
+            }: ${parseSchemaObject(requestBodyContentMediaType.schema)},`;
           }
         };
 
         if (requestBodyData && requestBodyData.required) {
-          requestBodyContent();
+          generadeRequestBodyParam();
         }
 
         // parameters
@@ -223,7 +230,7 @@ const parseSchemaObject = (schema: any) => {
         }
 
         if (requestBodyData && !requestBodyData.required) {
-          requestBodyContent();
+          generadeRequestBodyParam();
         }
 
         content += `)`;
@@ -242,7 +249,9 @@ const parseSchemaObject = (schema: any) => {
         }
         content +=
           ':Promise<' +
-          (returnTypes.length > 0 ? returnTypes.join(' | ') : 'Blob') +
+          (returnTypes.length > 0
+            ? returnTypes.join(' | ')
+            : 'ReadableStream<Uint8Array>') +
           '>';
         content += ` {`;
 
@@ -284,9 +293,11 @@ const parseSchemaObject = (schema: any) => {
           });
         }
 
-        if (requestBodyData && requestBodyData.content[apiMediaType]) {
-          content += `_apiRequest.headers['Content-type'] = '${apiMediaType}';\n`;
-          if (requestBodyData.content[apiMediaType].schema.type !== 'string') {
+        if (requestBodyContentMediaType) {
+          if (requestBodyData.content[apiMediaType]) {
+            content += `_apiRequest.headers['Content-type'] = '${apiMediaType}';\n`;
+          }
+          if (requestBodyContentMediaType.schema.type !== 'string') {
             content += `_apiRequest.body = JSON.stringify(requestBody);\n`;
           } else {
             content += `_apiRequest.body = requestBody;\n`;
@@ -296,7 +307,7 @@ const parseSchemaObject = (schema: any) => {
         if (returnTypes.length > 0) {
           content += `_apiRequest.headers['Accept'] = '${apiMediaType}';\n`;
         }
-        content += `const response = await this.client.fetch(_apiRequest);\n`;
+        content += `return await this.client.fetch(_apiRequest, async (response) => {\n`;
 
         // response mapping and handling
 
@@ -306,37 +317,29 @@ const parseSchemaObject = (schema: any) => {
           if (statusCode > 0) {
             const response = action.operation.responses[statusCodeString];
             content += `case ${statusCode}:\n`;
-            if (statusCode < 300) {
-              content += `return`;
+            if (statusCode < 400) {
+              if (response.content && response.content[apiMediaType]) {
+                content += `return await this.client.successJsonResponseParser(await response.json());`;
+              } else {
+                content += `return response.body;`;
+              }
             } else {
-              content += 'throw new ResponseError(response, ';
-            }
-            if (response.content && response.content[apiMediaType]) {
-              content += ` await this.client.successJsonResponseParser(await response.json())`;
-            } else {
-              content += ` await response.blob()`;
-            }
-            if (statusCode < 300) {
-              content += `;`;
-            } else {
-              content += ');';
+              content += 'throw new ApiRequestError(_apiRequest, response);';
             }
           }
         }
 
         content += `default:\n`;
-        if (returnTypes.length === 0) {
-          content += `if (response.status < 300) {
-                        return await response.blob();
-                    } else {
-                    `;
+        if (action.operation.responses['default']) {
+          content += `if (response.status < 400) {
+                        return response.body;
+                      }
+                      `;
         }
-        content += `throw new ResponseError(response, await response.blob());`;
-        if (returnTypes.length === 0) {
-          content += `}`;
-        }
-        content += `}`;
-        content += ` }\n\n`;
+        content += `throw new ApiRequestError(_apiRequest, response);`;
+        content += `}\n`;
+        content += `});\n`;
+        content += `}\n\n`;
       };
 
       [mainApiMediaType]
