@@ -321,7 +321,7 @@ const parseSchemaObject = (schema: any) => {
               if (response.content && response.content[apiMediaType]) {
                 content += `return await this.client.successJsonResponseParser(await response.json());`;
               } else {
-                content += `return response.body;`;
+                content += `return response.text();`;
               }
             } else {
               content += 'throw new ApiRequestError(_apiRequest, response);';
@@ -330,12 +330,10 @@ const parseSchemaObject = (schema: any) => {
         }
 
         content += `default:\n`;
-        if (action.operation.responses['default']) {
-          content += `if (response.status < 400) {
-                        return response.body;
-                      }
-                      `;
-        }
+        content += `if (response.status < 400) {
+                      return response.text();
+                    }
+                    `;
         content += `throw new ApiRequestError(_apiRequest, response);`;
         content += `}\n`;
         content += `});\n`;

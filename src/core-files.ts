@@ -55,6 +55,7 @@ export class ApiRequestError extends Error {
   }
 
   async toJSON() {
+    delete this.request.agent;
     return {
       message: this.message,
       errorStack: this.stack,
@@ -63,6 +64,7 @@ export class ApiRequestError extends Error {
         statusText: this.response.statusText,
         body: await this.response.text(),
       },
+      request: this.request,
     };
   }
 }
