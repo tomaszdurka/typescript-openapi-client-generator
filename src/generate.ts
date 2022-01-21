@@ -4,6 +4,11 @@ import { OpenAPIV3 } from 'openapi-types';
 
 const specPath = process.argv[2];
 
+if (!specPath) {
+  console.error('no spec path provided');
+  process.exit(1);
+}
+
 const lowercaseFirstLetter = (string) =>
   string.charAt(0).toLowerCase() + string.slice(1);
 
