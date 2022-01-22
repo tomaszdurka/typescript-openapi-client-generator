@@ -117,6 +117,8 @@ const parseSchemaObject = (schema: any) => {
     case 'array':
       return `Array<${parseSchemaObject(schema.items)}>`;
   }
+
+  return 'any';
 };
 
 (async () => {
