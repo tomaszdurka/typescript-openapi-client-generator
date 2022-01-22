@@ -137,7 +137,10 @@ const parseSchemaObject = (schema: any) => {
       if (pathObject[method]) {
         const operation: OperationObject = pathObject[method];
         const apiName = getApiName(operation);
-
+        operation.parameters ||= [];
+        if (pathObject.parameters) {
+          operation.parameters.push(...pathObject.parameters);
+        }
         apis[apiName] ||= [];
         apis[apiName].push({
           path,
