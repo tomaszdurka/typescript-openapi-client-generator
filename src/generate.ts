@@ -85,6 +85,14 @@ const parseSchemaObject = (schema: any) => {
 
   switch (schema.type) {
     case 'object':
+
+      if (
+          (!schema.properties || Object.keys(schema.properties).length === 0)
+          && (!schema.additionalProperties)
+      ) {
+        return 'any';
+      }
+
       let content = '{\n';
       for (const propName in schema.properties) {
         const property = schema.properties[propName];
@@ -123,7 +131,7 @@ const parseSchemaObject = (schema: any) => {
 
 (async () => {
   const mainApiMediaType = 'application/json';
-  const additionalApiMediaTypes = ['application/octet-stream'];
+  const additionalApiMediaTypes = ['application/octet-stream', 'application/pdf'];
   const file = (await fs.readFile(specPath)).toString();
   const json = JSON.parse(file);
   const spec: OpenAPIV3.Document = json;
@@ -137,9 +145,11 @@ const parseSchemaObject = (schema: any) => {
       if (pathObject[method]) {
         const operation: OperationObject = pathObject[method];
         const apiName = getApiName(operation);
+
+
         operation.parameters ||= [];
         if (pathObject.parameters) {
-          operation.parameters.push(...pathObject.parameters);
+          operation.parameters = pathObject.parameters.concat(operation.parameters);
         }
         apis[apiName] ||= [];
         apis[apiName].push({
@@ -328,7 +338,7 @@ const parseSchemaObject = (schema: any) => {
             const response = action.operation.responses[statusCodeString];
             content += `case ${statusCode}:\n`;
             if (statusCode < 400) {
-              if (response.content && response.content[apiMediaType]) {
+              if (response.content && response.content[apiMediaType] && returnTypes.length > 0  && returnTypes[0] !== 'ReadableStream<Uint8Array>') {
                 content += `return await this.client.successJsonResponseParser(await response.json());`;
               } else {
                 content += `return response.text();`;
