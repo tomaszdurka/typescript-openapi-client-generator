@@ -113,7 +113,7 @@ const parseSchemaObject = (schema: any) => {
         return schema.enum.map((e) => `'${e}'`).join(' | ');
       }
       if (schema.format === 'binary') {
-        return 'ReadableStream<Uint8Array>';
+        return 'stream.Readable';
       }
       return 'string';
     case 'integer':
@@ -271,7 +271,7 @@ const parseSchemaObject = (schema: any) => {
           ':Promise<' +
           (returnTypes.length > 0
             ? returnTypes.join(' | ')
-            : 'ReadableStream<Uint8Array>') +
+            : 'stream.Readable') +
           '>';
         content += ` {`;
 
@@ -338,7 +338,9 @@ const parseSchemaObject = (schema: any) => {
             const response = action.operation.responses[statusCodeString];
             content += `case ${statusCode}:\n`;
             if (statusCode < 400) {
-              if (response.content && response.content[apiMediaType] && returnTypes.length > 0  && returnTypes[0] !== 'ReadableStream<Uint8Array>') {
+              if (returnTypes.length > 0 && returnTypes[0] === 'stream.Readable') {
+                content += `return response.body;`;
+              } else if (response.content && response.content[apiMediaType] && returnTypes.length > 0) {
                 content += `return await this.client.successJsonResponseParser(await response.json());`;
               } else {
                 content += `return response.text();`;

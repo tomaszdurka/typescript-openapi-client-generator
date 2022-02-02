@@ -1,3 +1,5 @@
+import * as stream from "stream";
+
 export interface ClientMiddleware {
   handle(
     apiRequest: ApiRequest,
