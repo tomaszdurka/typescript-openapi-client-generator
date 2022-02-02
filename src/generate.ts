@@ -1,8 +1,10 @@
 import { OperationObject, ParameterObject } from './openapitypes';
 import { promises as fs } from 'fs';
 import { OpenAPIV3 } from 'openapi-types';
+import { cwd } from 'process';
 
 const specPath = process.argv[2];
+const generatedPath = cwd() + '/' + (process.argv[3] || 'generated');
 
 if (!specPath) {
   console.error('no spec path provided');
@@ -374,6 +376,6 @@ const parseSchemaObject = (schema: any) => {
 
   content += '';
 
-  await fs.mkdir(__dirname + `/../generated`, { recursive: true });
-  await fs.writeFile(__dirname + `/../generated/${packageName}.ts`, content);
+  await fs.mkdir(generatedPath, { recursive: true });
+  await fs.writeFile(generatedPath + `/${packageName}.ts`, content);
 }).call(null);
