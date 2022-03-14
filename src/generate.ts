@@ -355,7 +355,7 @@ const parseSchemaObject = (schema: any) => {
 
         content += `default:\n`;
         content += `if (response.status < 400) {
-                      return response.text();
+                      return response.body;
                     }
                     `;
         content += `throw new ApiRequestError(_apiRequest, response);`;
