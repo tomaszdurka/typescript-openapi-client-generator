@@ -1,6 +1,0 @@
-include:
-  - project: akrud/ops/autodevops
-    ref: main
-    file:
-      - config.yaml
-      - build_main_im.yaml
