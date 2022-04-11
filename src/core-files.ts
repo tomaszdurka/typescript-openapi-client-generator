@@ -9,7 +9,7 @@ export interface ClientMiddleware {
 
 export type requestHandler = (apiRequest: ApiRequest) => Promise<Response>;
 
-export type jsonParser = (json) => Promise<any>;
+export type jsonParser = (json: any) => Promise<any>;
 
 export type responseHandler = (response: Response) => Promise<any>;
 
@@ -27,7 +27,7 @@ export class Client {
       url.searchParams.append(key, value),
     );
 
-    const executeMiddleware = (apiRequest, iterator) => {
+    const executeMiddleware = (apiRequest: ApiRequest, iterator: number): Promise<Response> => {
       if (!this.middlewares[iterator]) {
         return this.fetchApi(url.href, apiRequest);
       }
@@ -50,7 +50,7 @@ export class Client {
 export class ApiRequestError extends Error {
   constructor(readonly request: ApiRequest, readonly response: Response) {
     super(
-      `${request.method.toUpperCase()} ${request.pathname} -> ${
+      `${request.method?.toUpperCase()} ${request.pathname} -> ${
         response.status
       } ${response.statusText}`,
     );

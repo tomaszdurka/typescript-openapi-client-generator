@@ -282,8 +282,8 @@ const parseSchemaObject = (schema: any) => {
                 pathname: '${action.path}',
                 searchParams: new URLSearchParams(),
                 method: '${action.method}',
-                headers: {},
             };\n`;
+        content += `_apiRequest.headers = {};\n`;
 
         if (action.operation.parameters) {
           action.operation.parameters.forEach((parameter: ParameterObject) => {
