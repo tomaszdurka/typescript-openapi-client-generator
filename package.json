@@ -2,24 +2,19 @@
   "name": "openapi-generator",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/generate.ts",
   "scripts": {
-    "generate": "ts-node src/generate.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "generate": "ts-node src/generate.ts"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
-    "@types/mustache": "^4.1.2",
     "@types/node": "^16.10.1",
     "@typescript-eslint/eslint-plugin": "^4.32.0",
     "@typescript-eslint/parser": "^4.32.0",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-prettier": "^4.0.0",
-    "fetch-openapi": "^9.1.0",
-    "handlebars": "^4.7.7",
-    "mustache": "^4.2.0",
     "openapi-types": "^9.3.0",
     "ts-node": "^10.2.1",
     "typescript": "^4.4.3"
