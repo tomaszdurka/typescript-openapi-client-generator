@@ -6,5 +6,5 @@ COPY package-lock.json .
 RUN yarn install
 COPY . .
 
-ENTRYPOINT ["yarn", "generate"]
+ENTRYPOINT ["yarn", "--silent", "generate"]
 CMD [""]
