@@ -1,6 +1,7 @@
-import {OperationObject, ParameterObject} from './openapitypes';
+import {MediaTypeObject, OperationObject, ParameterObject, ResponseObject} from './openapitypes';
 import {promises as fs} from 'fs';
-import {OpenAPIV3} from 'openapi-types';
+import {OpenAPIV3, OpenAPIV3_1} from 'openapi-types';
+import RequestBodyObject = OpenAPIV3_1.RequestBodyObject;
 
 const lowercaseFirstLetter = (string) =>
     string.charAt(0).toLowerCase() + string.slice(1);
@@ -46,7 +47,7 @@ type Action = {
     operation: OperationObject;
 };
 
-const parseSchemaObject = (schema: any) => {
+const parseSchemaObject = (schema: any): string => {
     if (schema.allOf && schema.allOf instanceof Array) {
         return schema.allOf
             .map((sub) => parseSchemaObject(sub))
@@ -122,16 +123,15 @@ const parseSchemaObject = (schema: any) => {
 
 let chunks = [];
 process.stdin.on('readable', () => {
-  let chunk;
-  while ((chunk = process.stdin.read()) !== null) {
-    chunks.push(chunk);
-  }
+    let chunk;
+    while ((chunk = process.stdin.read()) !== null) {
+        chunks.push(chunk);
+    }
 });
 
 process.stdin.on('end', async () => {
 
-    const mainApiMediaType = 'application/json';
-    const additionalApiMediaTypes = ['application/octet-stream', 'application/pdf'];
+    const defaultContentType = 'application/json';
     const spec = JSON.parse(chunks.join('')) as OpenAPIV3.Document;
     const apis: Record<string, Action[]> = {};
 
@@ -158,7 +158,6 @@ process.stdin.on('end', async () => {
         });
     });
 
-    const packageName = strip(spec.info.title);
     let content = ``;
 
     content +=
@@ -184,7 +183,28 @@ process.stdin.on('end', async () => {
         content += `constructor(private readonly client:Client) {}\n\n`;
 
         api.forEach((action: Action) => {
+
+            // gather content types
+            const mediaTypes = new Set();
+            if (action.operation.requestBody) {
+                for (const contentType in (action.operation.requestBody as RequestBodyObject).content) {
+                    mediaTypes.add(contentType);
+                }
+            }
+            if (action.operation.responses) {
+                for (const statusCode in action.operation.responses) {
+                    for (const contentType in (action.operation.responses[statusCode] as ResponseObject).content) {
+                        mediaTypes.add(contentType);
+                    }
+                }
+            }
+            mediaTypes.delete('*/*');
+            if (mediaTypes.size === 0) {
+                mediaTypes.add(defaultContentType);
+            }
+
             const generateAction = (action, apiMediaType) => {
+                let content = '';
                 let requestBodyContentMediaType;
                 let requestBodyData: any;
                 if (action.operation.requestBody) {
@@ -194,15 +214,15 @@ process.stdin.on('end', async () => {
                         requestBodyData.content['*/*'];
                 }
 
-                let responseMediaType = false;
+                let responseMediaType: boolean | MediaTypeObject = false;
                 for (const statusCode in action.operation.responses) {
                     if (statusCode === 'default') {
                         responseMediaType = true;
                     }
                     if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
                         const response = action.operation.responses[statusCode];
-                        if (response.content && response.content[apiMediaType]) {
-                            responseMediaType = response.content[apiMediaType];
+                        if (response.content) {
+                            responseMediaType = response.content[apiMediaType] || response.content['*/*'];
                         }
                     }
                 }
@@ -214,21 +234,23 @@ process.stdin.on('end', async () => {
                 content += `  async ${getOperationName(
                     action.operation.operationId +
                     '-' +
-                    (apiMediaType === mainApiMediaType
+                    (apiMediaType === defaultContentType
                         ? ''
                         : apiMediaType.split('/')[1]),
                 )}(`;
 
-                const generadeRequestBodyParam = () => {
+                const generateRequestBodyParam = () => {
                     if (requestBodyContentMediaType) {
-                        content += `requestBody${
-                            requestBodyData.required ? '' : '?'
-                        }: ${parseSchemaObject(requestBodyContentMediaType.schema)},`;
+                        let requestBodyType = parseSchemaObject(requestBodyContentMediaType.schema);
+                        if (apiMediaType === 'multipart/form-data') {
+                            requestBodyType += ' | FormData';
+                        }
+                        content += `requestBody: ${requestBodyType},`;
                     }
                 };
 
                 if (requestBodyData && requestBodyData.required) {
-                    generadeRequestBodyParam();
+                    generateRequestBodyParam();
                 }
 
                 // parameters
@@ -247,7 +269,7 @@ process.stdin.on('end', async () => {
                 }
 
                 if (requestBodyData && !requestBodyData.required) {
-                    generadeRequestBodyParam();
+                    generateRequestBodyParam();
                 }
 
                 content += `)`;
@@ -257,9 +279,9 @@ process.stdin.on('end', async () => {
                 for (const statusCode in action.operation.responses) {
                     if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
                         const response = action.operation.responses[statusCode];
-                        if (response.content && response.content[apiMediaType]) {
+                        if (responseMediaType !== true) {
                             returnTypes.push(
-                                parseSchemaObject(response.content[apiMediaType].schema),
+                                parseSchemaObject((responseMediaType as MediaTypeObject).schema),
                             );
                         }
                     }
@@ -311,13 +333,19 @@ process.stdin.on('end', async () => {
                 }
 
                 if (requestBodyContentMediaType) {
-                    if (requestBodyData.content[apiMediaType]) {
-                        content += `_apiRequest.headers['Content-type'] = '${apiMediaType}';\n`;
-                    }
-                    if (requestBodyContentMediaType.schema.type !== 'string') {
-                        content += `_apiRequest.body = JSON.stringify(requestBody);\n`;
-                    } else {
-                        content += `_apiRequest.body = requestBody;\n`;
+                    content += `_apiRequest.headers['Content-type'] = '${apiMediaType}';\n`;
+                    switch (apiMediaType) {
+                        case 'multipart/form-data':
+                            content += `_apiRequest.body = requestBody as FormData;\n`;
+                            break;
+                        case 'application/json':
+                        default:
+                            if (requestBodyContentMediaType.schema.type !== 'string') {
+                                content += `_apiRequest.body = JSON.stringify(requestBody);\n`;
+                            } else {
+                                content += `_apiRequest.body = requestBody;\n`;
+                            }
+                            break;
                     }
                 }
 
@@ -327,7 +355,6 @@ process.stdin.on('end', async () => {
                 content += `return await this.client.fetch(_apiRequest, async (response) => {\n`;
 
                 // response mapping and handling
-
                 content += `switch (response.status) {`;
                 for (const statusCodeString in action.operation.responses) {
                     const statusCode = parseInt(statusCodeString);
@@ -357,13 +384,16 @@ process.stdin.on('end', async () => {
                 content += `}\n`;
                 content += `});\n`;
                 content += `}\n\n`;
+                return content;
             };
 
-            [mainApiMediaType]
-                .concat(additionalApiMediaTypes)
-                .forEach((apiMediaType) => {
-                    generateAction(action, apiMediaType);
-                });
+            mediaTypes.forEach(contentType => {
+                const actionContent = generateAction(action, contentType)
+                content += actionContent;
+                if (!actionContent) {
+                    console.error(`${action.method} ${action.path} ignored`);
+                }
+            });
         });
 
         content += `}\n\n`;
