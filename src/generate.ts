@@ -365,7 +365,7 @@ process.stdin.on('end', async () => {
                             if (returnTypes.length > 0 && returnTypes[0] === 'stream.Readable') {
                                 content += `return response.body;`;
                             } else if (response.content && response.content[apiMediaType] && returnTypes.length > 0) {
-                                content += `return await this.client.successJsonResponseParser(await response.json());`;
+                                content += `return await this.client.jsonResponseHandler(_apiRequest, await response.json());`;
                             } else {
                                 content += `return response.text();`;
                             }

@@ -9,7 +9,7 @@ export interface ClientMiddleware {
 
 export type requestHandler = (apiRequest: ApiRequest) => Promise<Response>;
 
-export type jsonParser = (json: any) => Promise<any>;
+export type jsonResponseHandler = (apiRequest: ApiRequest, response: any) => Promise<any>;
 
 export type responseHandler = (response: Response) => Promise<any>;
 
@@ -18,7 +18,7 @@ export class Client {
     private readonly basePath: string,
     private readonly fetchApi: any,
     private readonly middlewares: Array<ClientMiddleware> = [],
-    readonly successJsonResponseParser: jsonParser = async (r) => r,
+    readonly jsonResponseHandler: jsonResponseHandler = async (apiRequest, response) => response,
   ) {}
 
   async _fetch(apiRequest: ApiRequest): Promise<Response> {
