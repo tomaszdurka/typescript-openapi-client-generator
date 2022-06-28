@@ -227,7 +227,7 @@ process.stdin.on('end', async () => {
                     }
                 }
                 if (!responseMediaType && !requestBodyContentMediaType) {
-                    return;
+                    // return;
                 }
 
                 // function name
@@ -279,7 +279,7 @@ process.stdin.on('end', async () => {
                 for (const statusCode in action.operation.responses) {
                     if (parseInt(statusCode) >= 200 && parseInt(statusCode) < 300) {
                         const response = action.operation.responses[statusCode];
-                        if (responseMediaType !== true) {
+                        if (responseMediaType !== true && responseMediaType !== false) {
                             returnTypes.push(
                                 parseSchemaObject((responseMediaType as MediaTypeObject).schema),
                             );
