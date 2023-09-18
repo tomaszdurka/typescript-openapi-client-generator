@@ -245,7 +245,11 @@ process.stdin.on('end', async () => {
                         if (apiMediaType === 'multipart/form-data') {
                             requestBodyType += ' | FormData';
                         }
-                        content += `requestBody: ${requestBodyType},`;
+                        content += 'requestBody'
+                        if (!requestBodyData.required) {
+                            content += '?';
+                        }
+                        content += `: ${requestBodyType},`;
                     }
                 };
 
@@ -281,7 +285,7 @@ process.stdin.on('end', async () => {
                         const response = action.operation.responses[statusCode];
                         if (responseMediaType !== true && responseMediaType !== false) {
                             returnTypes.push(
-                                parseSchemaObject((responseMediaType as MediaTypeObject).schema),
+                                parseSchemaObject((responseMediaType as MediaTypeObject)?.schema || {}),
                             );
                         }
                     }
