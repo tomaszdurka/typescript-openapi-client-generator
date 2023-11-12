@@ -5,6 +5,7 @@ COPY yarn.lock .
 COPY package.json .
 RUN yarn install
 COPY . .
+RUN yarn build
 
 
 FROM node:20-slim
