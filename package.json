@@ -4,11 +4,12 @@
   "description": "",
   "main": "src/generate.ts",
   "scripts": {
-    "generate": "ts-node src/generate.ts"
+    "build": "tsc && cp -R src/assets dist/assets",
+    "generate": "node dist/generate.js"
   },
   "author": "",
   "license": "MIT",
-  "dependencies": {
+  "devDependencies": {
     "@types/node": "^16.10.1",
     "@typescript-eslint/eslint-plugin": "^4.32.0",
     "@typescript-eslint/parser": "^4.32.0",

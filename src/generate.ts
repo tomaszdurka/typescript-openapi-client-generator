@@ -161,7 +161,7 @@ process.stdin.on('end', async () => {
     let content = ``;
 
     content +=
-        (await fs.readFile(__dirname + '/core-files.ts')).toString() + '\n\n';
+        (await fs.readFile(__dirname + '/assets/core-files.ts')).toString() + '\n\n';
 
     if (spec.components.schemas) {
         const schemas = spec.components.schemas;

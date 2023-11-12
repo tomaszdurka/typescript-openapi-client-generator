@@ -2,3 +2,5 @@ node_modules/
 .idea
 generated/
 /*.json
+dist
+*.log
