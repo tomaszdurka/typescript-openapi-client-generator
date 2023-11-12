@@ -1,4 +1,4 @@
-FROM node:20-buster-slim as builder
+FROM node:20-slim as builder
 
 WORKDIR /app
 COPY yarn.lock .
@@ -7,7 +7,7 @@ RUN yarn install
 COPY . .
 
 
-FROM node:20-buster-slim
+FROM node:20-slim
 WORKDIR /app
 COPY --from=builder /app/dist /app/dist
 COPY --from=builder /app/package.json /app/package.json
